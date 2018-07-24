@@ -1,3 +1,4 @@
+import re
 from sys import stderr
 
 def warn(*args):
@@ -23,3 +24,10 @@ def colored(color, text):
         end   = colors["reset"],
         text  = text,
     )
+
+
+def remove_prefix(prefix, string):
+    return re.sub('^' + re.escape(prefix), string)
+
+def remove_suffix(suffix, string):
+    return re.sub(re.escape(suffix) + '$', string)

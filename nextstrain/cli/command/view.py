@@ -12,9 +12,11 @@ check-setup` to check if Docker is installed and works.
 
 import re
 import netifaces as net
+import zeroconf
+import socket
 from pathlib import Path
 from ..runner import docker
-from ..util import colored
+from ..util import colored, warn, remove_suffix
 
 
 def register_parser(subparser):
@@ -87,10 +89,28 @@ def run(opts):
         else:
             host = remote_address
 
+    # Try to advertise ourselves using mDNS on nextstrain.local (or a uniquely
+    # numbered version of it).  If we're successful, then use that hostname in
+    # our messaging.
+    mdns = None
+    try:
+        (advertised_host, mdns) = advertise_service(host, port)
+    except:
+        pass
+    else:
+        host = advertised_host
+
     # Show a helpful message about where to connect
     print_url(host, port, datasets)
 
-    return docker.run(opts)
+    # Run auspice
+    status = docker.run(opts)
+
+    # Cleanup mDNS instance, if any
+    if mdns:
+        mdns.close()
+
+    return status
 
 
 def print_url(host, port, datasets):
@@ -147,3 +167,39 @@ def best_remote_address():
     ]
 
     return addresses[0] if addresses else None
+
+
+def advertise_service(host, port):
+    mdns = zeroconf.Zeroconf()
+
+    service = zeroconf.ServiceInfo(
+        "_http._tcp.local.",
+        "nextstrain._http._tcp.local.",
+        server     = "nextstrain.local",
+        address    = socket.inet_aton(host),
+        port       = port,
+        properties = {})
+
+    # Check that our service name is unique on the network.  If it's not, an
+    # increasing integer will be appended until it is, yielding, for example:
+    #
+    #    nextstrain-2._http._tcp.local.
+    #
+    # We then use this unique service name to set a unique server name
+    # (hostname) based on it (e.g. nextstrain-2.local.).
+    #
+    # This allows multiple people on the same network to advertise a local
+    # Nextstrain instance at the same time.
+    mdns.check_service(service, allow_name_change = True)
+
+    service.server = remove_suffix(service.type + '.local.', service.name)
+
+    # This starts a new set of threads which listen and respond to mDNS queries
+    # in the background until we exit.  The default TTL is 120s, so we reduce
+    # to 30s for less cache lag since we're likely to be spinning up and down
+    # quickly unlike other services.
+    mdns.register_service(service, ttl = 30)
+
+    # Return the server name, without the trailing dot, and the Zeroconf
+    # instance for lifecycle management
+    return (service.server.rstrip("."), mdns)
