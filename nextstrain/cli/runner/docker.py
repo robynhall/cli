@@ -130,9 +130,14 @@ def run(opts):
             for v in opts.volumes
              if v.src is not None],
 
-        # Pass through credentials as environment variables
-        "--env=RETHINK_HOST",
-        "--env=RETHINK_AUTH_KEY",
+        # Pass through all NEXTSTRAIN_* environment variables.
+        #
+        # We intentionally don't explicitly include values so sensitive bits
+        # don't show up on the command line (which is visible in `ps` output
+        # and elsewhere).
+      *["--env=%s" % name
+            for name in os.environ
+             if name.startswith("NEXTSTRAIN_")],
 
         *opts.docker_args,
         opts.image,
