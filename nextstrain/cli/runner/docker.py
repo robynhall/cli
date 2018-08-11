@@ -64,7 +64,7 @@ def register_arguments(parser, exec=None, volumes=[]):
             nargs   = argparse.REMAINDER)
 
 
-def run(opts):
+def run(opts, working_volume = None):
     # Ensure all volume source paths exist.  Docker will auto-create missing
     # directories in the path, which, while desirable under some circumstances,
     # doesn't match up well with our use case.  We're aiming to not surprise or
@@ -100,6 +100,9 @@ def run(opts):
             for v in opts.volumes
              if v.src is not None],
 
+        # Change the default working directory if requested
+        *(["--workdir=/nextstrain/%s" % working_volume.name] if working_volume else []),
+
         # Pass through credentials as environment variables
         "--env=RETHINK_HOST",
         "--env=RETHINK_AUTH_KEY",
@@ -110,13 +113,7 @@ def run(opts):
         *runner.replace_ellipsis(opts.exec_args, opts.extra_exec_args)
     ]
 
-    try:
-        subprocess.run(argv, check = True)
-    except subprocess.CalledProcessError as e:
-        warn("Error running %s, exited %d" % (e.cmd, e.returncode))
-        return e.returncode
-    else:
-        return 0
+    return runner.run(argv)
 
 
 def test_setup():
